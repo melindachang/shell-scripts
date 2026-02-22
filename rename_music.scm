@@ -36,7 +36,7 @@
 ;; rename-audio-file : string? -> void?
 (define (rename-audio-file path)
   (let ([ext (path->extension path)])
-    (if (member ext g-supported-audio-file-types)
+    (if (is-audio? path)
         (let* ([tags (extract-audio-tags path)]
                [disc-number (pad-2 (or (tag-value tags 'discnumber) 1))]
                [track-number (pad-2 (get-req-tag tags 'tracknumber))]
@@ -82,25 +82,25 @@
                          `("/mnt" "EXTREME_SSD" "Music" ,album-artist ,album-folder-name ,(or cd-folder #f)))
                  "/")))
 
-;; make-base-dirpath-shared : hash-table? (listof string?) -> void?
-(define (make-base-dirpath-shared tags files)
-  (let* ([album-artist (sluggify-str (get-req-tag tags 'albumartist))]
-         [album-title (sluggify-str (get-req-tag tags 'albumtitle))]
-         [recording-date (substring (get-req-tag tags 'recordingdate) 0 4)]
-         [file-ext (string->upper (path->extension (first (filter is-audio? files))))]
-         [media-type (let ([raw (get-req-tag tags 'originalmediatype)])
-                       (if (equal? raw "Digital Media") "WEB" raw))]
-         [catalog-num (tag-value tags 'catalognumber)]
-         [album-folder-name (string-append album-artist " - "
-                                           album-title " "
-                                           (format "(~a) " recording-date)
-                                           (format "[~a ~a]" file-ext media-type)
-                                           (if catalog-num (format " {~a}" catalog-num) ""))]
-         [cd-folder (if (multi-disc? tags)
-                        (string-append "CD" (pad-2 (get-req-tag tags 'discnumber)))
-                        #f)])
-    (string-join (filter string? `(,album-folder-name ,(or cd-folder #f)))
-                 "/")))
+; ;; make-base-dirpath-shared : hash-table? (listof string?) -> void?
+; (define (make-base-dirpath-shared tags files)
+;   (let* ([album-artist (sluggify-str (get-req-tag tags 'albumartist))]
+;          [album-title (sluggify-str (get-req-tag tags 'albumtitle))]
+;          [recording-date (substring (get-req-tag tags 'recordingdate) 0 4)]
+;          [file-ext (string->upper (path->extension (first (filter is-audio? files))))]
+;          [media-type (let ([raw (get-req-tag tags 'originalmediatype)])
+;                        (if (equal? raw "Digital Media") "WEB" raw))]
+;          [catalog-num (tag-value tags 'catalognumber)]
+;          [album-folder-name (string-append album-artist " - "
+;                                            album-title " "
+;                                            (format "(~a) " recording-date)
+;                                            (format "[~a ~a]" file-ext media-type)
+;                                            (if catalog-num (format " {~a}" catalog-num) ""))]
+;          [cd-folder (if (multi-disc? tags)
+;                         (string-append "CD" (pad-2 (get-req-tag tags 'discnumber)))
+;                         #f)])
+;     (string-join (filter string? `(,album-folder-name ,(or cd-folder #f)))
+;                  "/")))
 
 ;; is-audio? : string? -> boolean?
 (define (is-audio? path)
