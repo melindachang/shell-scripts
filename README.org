@@ -1,0 +1,15 @@
+* shell-scripts
+
+a collection of shell scripts (largely) written in steel, a scheme dialect built
+for interoperability with rust. much more elegant and expressive a system than
+scripting in bash/fish or python. arguably pointless.
+
+built for use on my personal system; no guarantees on other machines.
+
+* Index
+
+** Media management
+
+- *rename_music.scm:* Moves specified music file(s) to appropriate
+  directories based on tag information.
+- *demusicbrainz.scm:* Replace nonstandard unicode characters pulled by Musicbrainz Picard.

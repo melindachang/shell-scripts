@@ -1,0 +1,6 @@
+[workspace]
+members = ["steel-audio-tags"]
+resolver = "3"
+
+[workspace.dependencies]
+steel-core = "0.8.2"
