@@ -43,8 +43,20 @@
          [tags (extract-audio-tags path)]
          [disc-number (pad-2 (or (tag-value tags 'discnumber) 1))]
          [track-number (pad-2 (get-req-tag tags 'tracknumber))]
-         [track-title (truncate-file-str (sluggify-str (get-req-tag tags 'tracktitle)) 60)])
+         [track-title
+          (truncate-file-str (sluggify-str (get-req-tag tags 'tracktitle)) 60)])
     (format "~a.~a - ~a.~a" disc-number track-number track-title ext)))
+
+;; get-new-meta-filename : string? -> string?
+(define (get-new-meta-filename path tags)
+  (let* ([set-subtitle (tag-value tags 'setsubtitle)]
+         [meta-name (if (and (string? set-subtitle)
+                             (> (string-length set-subtitle) 0))
+                        set-subtitle
+                        (get-req-tag tags 'albumtitle))])
+    (string-append (truncate-file-str (sluggify-str meta-name) 60)
+                   "."
+                   (path->extension path))))
 
 ;; get-album-identity : (listof string?) -> hash-table?
 (define (get-album-identity files)
@@ -61,9 +73,11 @@
 ;; make-base-dirpath : hash-table? (listof string?) -> void?
 (define (make-base-dirpath tags files)
   (let* ([album-artist (sluggify-str (get-req-tag tags 'albumartist))]
-         [album-title (truncate-file-str (sluggify-str (get-req-tag tags 'albumtitle)) 60)]
+         [album-title
+          (truncate-file-str (sluggify-str (get-req-tag tags 'albumtitle)) 60)]
          [recording-date (substring (get-req-tag tags 'recordingdate) 0 4)]
-         [file-ext (string->upper (path->extension (first (filter is-audio? files))))]
+         [file-ext (string->upper (path->extension (first (filter is-audio?
+                                                                  files))))]
          [media-type (let ([raw (get-req-tag tags 'originalmediatype)])
                        (cond
                          [(equal? raw "Digital Media") "WEB"]
@@ -73,20 +87,25 @@
          [catalog-num (if (list? catalog-num-raw)
                           (car catalog-num-raw)
                           catalog-num-raw)]
-         [album-folder-name (string-append album-title
-                                           " "
-                                           (format "(~a) " recording-date)
-                                           (format "[~a ~a]" file-ext media-type)
-                                           (if catalog-num
-                                               (format " {~a}" catalog-num)
-                                               ""))]
+         [album-folder-name
+          (string-append album-title
+                         " "
+                         (format "(~a) " recording-date)
+                         (format "[~a ~a]" file-ext media-type)
+                         (if catalog-num
+                             (format " {~a}" catalog-num)
+                             ""))]
          [cd-folder (if (multi-disc? tags)
-                        (string-append "CD" (pad-2 (get-req-tag tags 'discnumber)))
+                        (string-append "CD"
+                                       (pad-2 (get-req-tag tags 'discnumber)))
                         #f)])
-    (string-join
-     (filter string?
-             `("/mnt" "EXTREME_SSD" "Music" ,album-artist ,album-folder-name ,(or cd-folder #f)))
-     "/")))
+    (string-join (filter string?
+                         `("/mnt" "EXTREME_SSD"
+                                  "Music"
+                                  ,album-artist
+                                  ,album-folder-name
+                                  ,(or cd-folder #f)))
+                 "/")))
 
 ; ;; make-base-dirpath-shared : hash-table? (listof string?) -> void?
 ; (define (make-base-dirpath-shared tags files)
@@ -110,11 +129,13 @@
 
 ;; is-audio? : string? -> bool?
 (define (is-audio? path)
-  (and (is-file? path) (member (path->extension path) g-supported-audio-file-types)))
+  (and (is-file? path)
+       (member (path->extension path) g-supported-audio-file-types)))
 
 ;; is-meta? : string? -> bool?
 (define (is-meta? path)
-  (and (is-file? path) (member (path->extension path) g-supported-meta-file-types)))
+  (and (is-file? path)
+       (member (path->extension path) g-supported-meta-file-types)))
 
 ;; get-req-tag : hash-table? symbol? -> string?
 (define (get-req-tag tags key)
@@ -135,26 +156,17 @@
          (for-each
           (λ (entry)
             (let* ([base-name (file-name entry)]
-                   [new-name (cond
-                               [(is-audio? entry) (get-new-filename entry)]
-                               [(is-meta? entry)
-                                (let* ([set-subtitle (tag-value tags 'setsubtitle)]
-                                       [meta-name (if (and (string? set-subtitle)
-                                                           (> (string-length set-subtitle) 0))
-                                                      set-subtitle
-                                                      (get-req-tag tags 'albumtitle))])
-                                  (string-append (truncate-file-str (sluggify-str meta-name) 60)
-                                                 "."
-                                                 (path->extension entry)))]
-                               [else base-name])]
+                   [new-name
+                    (cond
+                      [(is-audio? entry) (get-new-filename entry)]
+                      [(is-meta? entry) (get-new-meta-filename entry tags)]
+                      [else base-name])]
                    [dest (string-append target-dir "/" new-name)]
                    [current-dir (canonicalize-path (parent-name entry))])
               (unless (and (equal? current-dir (canonicalize-path target-dir))
                            (equal? new-name base-name))
                 (log-move! entry dest)
-                (rename-file! entry dest)
-                ; (spawn-process (command "mv" `("-v" ,entry ,dest)))
-                )))
+                (rename-file! entry dest))))
           full-paths))]
       [else
        (for-each (λ (dir)
@@ -163,6 +175,7 @@
                  full-paths)])
     (delete-if-empty! path)))
 
+;; log-move! : string? string? -> void?
 (define (log-move! src dest)
   (displayln (format "┌─ Source: ~a" src))
   (displayln (format "└─ Target: ~a" dest))
