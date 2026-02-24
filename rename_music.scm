@@ -3,6 +3,9 @@
 (#%require-dylib "libsteel_audio_tags"
                  (only-in extract-audio-tags))
 
+(#%require-dylib "libsteel_fs_rename"
+                 (only-in rename-file!))
+
 (require "steel/iterators")
 (require "steel/result")
 (require "srfi/srfi-28/format.scm")
@@ -21,11 +24,16 @@
   (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\; #\| #\< #\>)]
          [chars (string->list s)]
          [replaced-chars (map (λ (c)
-                                (if (member c blacklist)
-                                    #\_
-                                    c))
+                                (if (member c blacklist) #\_ c))
                               chars)])
     (list->string replaced-chars)))
+
+(define (delete-if-empty! path)
+  (when (is-dir? path)
+    (let ([remaining (read-dir path)])
+      (when (null? remaining)
+        (displayln (format "Cleaning up empty directory: ~a" path))
+        (delete-directory! path)))))
 
 ;; truncate-file-str : string? number? -> string?
 (define (truncate-file-str s max-len)
@@ -60,12 +68,21 @@
 ;; make-base-dirpath : hash-table? (listof string?) -> void?
 (define (make-base-dirpath tags files)
   (let* ([album-artist (sluggify-str (get-req-tag tags 'albumartist))]
-         [album-title (sluggify-str (get-req-tag tags 'albumtitle))]
+         [album-title (truncate-file-str (sluggify-str (get-req-tag tags 'albumtitle))
+                                         60)]
          [recording-date (substring (get-req-tag tags 'recordingdate) 0 4)]
          [file-ext (string->upper (path->extension (first (filter is-audio? files))))]
          [media-type (let ([raw (get-req-tag tags 'originalmediatype)])
-                       (if (equal? raw "Digital Media") "WEB" raw))]
-         [catalog-num (tag-value tags 'catalognumber)]
+                       (cond
+			[(equal? raw "Digital Media")
+                         "WEB"]
+                        [(string-contains? raw "CD")
+                         "CD"]
+                        [else raw]))]
+         [catalog-num-raw (tag-value tags 'catalognumber)]
+         [catalog-num (if (list? catalog-num-raw)
+                          (car catalog-num-raw)
+                          catalog-num-raw)]
          [album-folder-name (string-append album-title " "
 					   (format "(~a) " recording-date)
 					   (format "[~a ~a]" file-ext media-type)
@@ -128,24 +145,38 @@
           (create-directory! target-dir))
         (for-each (λ (entry)
                     (let* ([base-name (file-name entry)]
-                           [new-name (cond [(is-audio? entry)
-                                            (get-new-filename entry)]
-                                           [(is-meta? entry)
-                                            (string-append (sluggify-str (get-req-tag tags 'albumtitle))
-                                                           "." (path->extension entry))]
-                                           [else base-name])]
+                           [new-name (cond
+				      [(is-audio? entry)
+                                       (get-new-filename entry)]
+                                      [(is-meta? entry)
+                                       (let* ([set-subtitle (tag-value tags 'setsubtitle)]
+                                              [meta-name (if (and (string? set-subtitle)
+                                                                  (> (string-length set-subtitle) 0))
+                                                             set-subtitle
+                                                             (get-req-tag tags 'albumtitle))])
+                                         (string-append (truncate-file-str (sluggify-str meta-name) 60) "." (path->extension entry)))]
+                                      [else base-name])]
                            [dest (string-append target-dir "/" new-name)]
                            [current-dir (canonicalize-path (parent-name entry))])
                       (unless (and (equal? current-dir
                                            (canonicalize-path target-dir))
                                    (equal? new-name base-name))
-                        (spawn-process (command "mv" `("-v" ,entry ,dest))))))
+                        (log-move! entry dest)
+                        (rename-file! entry dest)
+					; (spawn-process (command "mv" `("-v" ,entry ,dest)))
+                        )))
                   full-paths))]
      [else
       (for-each (λ (dir)
                   (when (is-dir? dir)
                     (organize-directory dir)))
-                full-paths)])))
+                full-paths)])
+    (delete-if-empty! path)))
+
+(define (log-move! src dest)
+  (displayln (format "┌─ Source: ~a" src))
+  (displayln (format "└─ Target: ~a" dest))
+  (displayln "")) ;; Extra newline for spacing between files
 
 ;; tag-value : hash-table? symbol? -> (string? | #f)
 (define (tag-value tags key)

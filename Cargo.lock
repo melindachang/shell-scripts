@@ -1337,6 +1337,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "steel-fs-rename"
+version = "0.1.0"
+dependencies = [
+ "abi_stable",
+ "steel-core",
+]
+
+[[package]]
 name = "steel-gen"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
