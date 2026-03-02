@@ -12,4 +12,3 @@ built for use on my personal system; no guarantees on other machines.
 
 - *rename_music.scm:* Moves specified music file(s) to appropriate
   directories based on tag information.
-- *demusicbrainz.scm:* Replace nonstandard unicode characters pulled by Musicbrainz Picard.

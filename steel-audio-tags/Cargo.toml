@@ -11,4 +11,5 @@ crate-type = ["cdylib"]
 abi_stable = "0.11.3"
 anyhow = "1.0.102"
 lofty = "0.23.2"
+regex = "1.12.3"
 steel-core = { workspace = true, features = ["dylibs", "sync"] }

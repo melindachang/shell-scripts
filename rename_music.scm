@@ -19,11 +19,12 @@
 
 ;; sluggify-str : string? -> string?
 (define (sluggify-str s)
-  (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\; #\| #\< #\>)]
+  (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\| #\< #\>)]
          [chars (string->list s)]
          [replaced-chars (map (λ (c) (if (member c blacklist) #\_ c)) chars)])
     (list->string replaced-chars)))
 
+;; delete-if-empty! : string? -> void?
 (define (delete-if-empty! path)
   (when (is-dir? path)
     (let ([remaining (read-dir path)])
@@ -189,13 +190,8 @@
 (define (display-tags tags)
   (for-each (λ (kv) (displayln (list (car kv) (cdr kv)))) (hash->list tags)))
 
-;; main : (listof any?) -> void?
-(define (main args)
-  (cond
-    [(or (empty? args) (> (length args) 1) (not (is-dir? (car args))))
-     (error! "Usage: rename_music.scm <directory>")]
-    [else
-     (organize-directory (car args))
-     (displayln "Organization complete.")]))
-
-(main (list-tail (command-line) 2))
+(let ([args (car (list-tail (command-line) 2))])
+  (when (or (null? args) (not (is-dir? args)))
+    (error! "Usage: rename_music.scm <directory>"))
+  (organize-directory args)
+  (displayln "Organization complete."))
