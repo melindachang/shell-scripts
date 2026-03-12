@@ -1,4 +1,4 @@
-#!/usr/bin/env steel
+#!/usr/bin/env -S steel --
 
 (#%require-dylib "libsteel_audio_tags" (only-in extract-audio-tags
                                                 regex-patch-audio-tag))
@@ -39,7 +39,6 @@
                          (map symbol->string g-keys-to-sanitize)
                          g-regex-rules))
 
-
 ;; is-audio? : string? -> bool?
 (define (is-audio? path)
   (and (is-file? path)
@@ -65,7 +64,7 @@
 
 (let ([args (list-tail (command-line) 2)])
   (when (null? args)
-    (error! "Usage: sanitize_tags.scm <file-or-directory>"))
+    (error! "Usage: sanitize_music.scm <file-or-directory...>"))
   (for-each (λ (arg)
                (unless (path-exists? arg)
                        (error! (format "Path not found: ~a" arg)))

@@ -3,4 +3,4 @@ members = ["steel-audio-tags", "steel-fs-rename"]
 resolver = "3"
 
 [workspace.dependencies]
-steel-core = "0.8.2"
+steel-core = { version = "0.8.2", features = ["anyhow", "dylibs", "sync"] }

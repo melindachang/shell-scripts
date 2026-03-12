@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 abi_stable = "0.11.3"
-steel-core = { workspace = true, features = ["dylibs", "sync"] }
+steel-core = { workspace = true }
