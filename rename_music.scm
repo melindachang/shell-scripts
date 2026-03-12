@@ -3,7 +3,6 @@
 (#%require-dylib "libsteel_audio_tags" (only-in extract-audio-tags))
 (#%require-dylib "libsteel_fs_rename" (only-in rename-file!))
 
-(require "steel/result")
 (require "srfi/srfi-28/format.scm")
 
 (define g-supported-audio-file-types '("flac" "mp3"))
@@ -44,9 +43,9 @@
          [replaced-chars (map (λ (c) (if (member c blacklist) #\_ c)) chars)])
     (list->string replaced-chars)))
 
-;; delete-if-empty! : is-dir? -> void?
+;; delete-if-empty! : string? -> void?
 (define/contract (delete-if-empty! path)
-  (->/c is-dir? void?)
+  (->/c string? void?)
   (let ([remaining (read-dir path)])
     (when (null? remaining)
       (displayln (format "Cleaning up empty directory: ~a" path))
@@ -135,7 +134,7 @@
                            ,(or cd-folder #f)))
                  "/")))
 
-;; organize-directory : string? -> void?
+;; organize-directory : is-dir? -> void?
 (define/contract (organize-directory path)
   (->/c is-dir? void?)
   (let* ([entries (read-dir path)]
@@ -144,7 +143,7 @@
       ;; case: album or disc
       [(null? audio-files)
        (for-each (λ (dir) (organize-directory dir))
-                 entries)]
+                 (filter is-dir? entries))]
       [else
         (let* ([tags (extract-audio-tags (car audio-files))]
                [target-dir (make-base-dirpath tags audio-files)])
@@ -185,7 +184,7 @@
        (displayln `(,(car kv) ,(cdr kv))))
     (hash->list tags)))
 
-(let ([args (list-tail (command-line) 2)])
+(let ([args (car (list-tail (command-line) 3))])
   (when (null? args)
     (error! "Usage: rename_music.scm [-s|--share] <directory>"))
   (organize-directory args)

@@ -3,8 +3,6 @@
 (#%require-dylib "libsteel_audio_tags" (only-in extract-audio-tags
                                                 regex-patch-audio-tag))
 
-(require "steel/iterators")
-(require "steel/result")
 (require "srfi/srfi-28/format.scm")
 
 (define g-supported-audio-file-types '("flac" "mp3"))
@@ -62,7 +60,7 @@
     [else
       (sanitize-file path)]))
 
-(let ([args (list-tail (command-line) 2)])
+(let ([args (list-tail (command-line) 3)])
   (when (null? args)
     (error! "Usage: sanitize_music.scm <file-or-directory...>"))
   (for-each (λ (arg)
