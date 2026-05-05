@@ -1,0 +1,15 @@
+[package]
+name = "steel-taglib"
+edition = "2024"
+
+[lib]
+name = "steel_taglib"
+version = "0.1.0"
+crate-type = ["cdylib"]
+
+[dependencies]
+steel-core = { workspace = true }
+abi_stable = { workspace = true }
+lofty = "0.24.0"
+anyhow = "1.0.102"
+regex = "1.12.3"

@@ -1,69 +1,59 @@
 #!/usr/bin/env -S steel --
 
-(#%require-dylib "libsteel_audio_tags" (only-in extract-audio-tags))
-(#%require-dylib "libsteel_fs_rename" (only-in rename-file!))
+(#%require-dylib "libsteel_taglib" (only-in get-audio-tags rename!))
 
 (require "srfi/srfi-28/format.scm")
+(require "cliron/main.scm")
 
 (define g-supported-audio-file-types '("flac" "mp3"))
 (define g-supported-meta-file-types '("cue" "log"))
 
-;; tag-hash/c : any/c -> bool?
-;; Hash map of string keys to either (a) strings or (b) vectors of strings, in the way of metadata tags.
-(define tag-hash/c
-  (hashof string? (or/c string? (listof string?))))
-
 ;; audio-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported audio file, false otherwise.
-(define/contract (audio-file? path)
-  (->/c string? bool?)
+(define (audio-file? path)
   (and (member (path->extension path) g-supported-audio-file-types)
        (is-file? path)))
-
+ 
 ;; meta-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported metadata file, false otherwise.
-(define/contract (meta-file? path)
-  (->/c string? bool?)
+(define (meta-file? path)
   (and (member (path->extension path) g-supported-meta-file-types)
        (is-file? path)))
 
-;; pad-to-width : string? number? -> string?
-;; Pad a string with zeros to the specified width.
-(define/contract (pad-to-width s width)
-  (->/c string? number? string?)
-  (if (< (string-length s) width)
-      (string-append (make-string (- width (string-length s)) #\0) s)
-      s))
+;;; UTILS
 
 ;; sluggify-str : string? -> string?
-(define/contract (sluggify-str s)
-  (->/c string? string?)
+(define (sluggify-str s)
   (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\| #\< #\>)]
          [chars (string->list s)]
          [replaced-chars (map (λ (c) (if (member c blacklist) #\_ c)) chars)])
     (list->string replaced-chars)))
 
+;; pad-to-width : string? number? -> string?
+;; Pad a string with zeros to the specified width.
+(define (pad-to-width s width)
+  (if (< (string-length s) width)
+      (string-append (make-string (- width (string-length s)) #\0) s)
+      s))
+
 ;; delete-if-empty! : string? -> void?
-(define/contract (delete-if-empty! path)
-  (->/c string? void?)
+(define (delete-if-empty! path)
   (let ([remaining (read-dir path)])
     (when (null? remaining)
       (displayln (format "Cleaning up empty directory: ~a" path))
       (delete-directory! path))))
 
 ;; truncate-file-str : string? number? -> string?
-(define/contract (truncate-file-str s len)
-  (->/c string? number? string?)
+(define (truncate-file-str s len)
   (if (> (string-length s) len)
       (string-append (substring s 0 (- len 3)) "...")
       s))
 
 ;; get-new-filename : audio-file? -> string?
 ;; Make new file name for the specified audio file.
-(define/contract (get-new-filename path)
-  (->/c audio-file? string?)
+(define (get-new-filename path)
   (let* ([ext (path->extension path)]
-         [tags (extract-audio-tags path)]
+         [tags (get-audio-tags path)]
          [disc-number (pad-to-width (or (tag-try-get tags 'discnumber) 1) 2)]
          [track-number (pad-to-width (tag-ref tags 'tracknumber) 2)]
          [track-title
@@ -72,8 +62,7 @@
 
 ;; get-new-meta-filename : string? -> string?
 ;; Make new file name for the specified metadata file.
-(define/contract (get-new-meta-filename path tags)
-  (->/c meta-file? string?)
+(define (get-new-meta-filename path tags)
   (let* ([set-subtitle (tag-try-get tags 'setsubtitle)]
          [meta-name (if (and (string? set-subtitle)
                              (> (string-length set-subtitle) 0))
@@ -84,24 +73,21 @@
                    (path->extension path))))
 
 ;; get-album-identity : (listof is-file?) -> hash?
-(define/contract (get-album-identity files)
-  (->/c (listof is-file?) tag-hash/c)
+(define (get-album-identity files)
   (let ([audio-files (filter audio-file? files)])
     (if (null? audio-files)
         (error! "No audio files found in directory.")
-        (extract-audio-tags (car audio-files)))))
+        (get-audio-tags (car audio-files)))))
 
 ;; multi-disc? : hash? -> bool?
-(define/contract (multi-disc? tags)
-  (->/c tag-hash/c bool?)
+(define (multi-disc? tags)
   (let* ([total (tag-try-get tags 'disctotal)])
     (and total
          (let ([n (string->number total)])
            (and n (> n 1))))))
 
-;; make-base-dirpath : hash? (listof string?) -> string?
-(define/contract (make-base-dirpath tags files)
-  (->/c tag-hash/c (listof string?) string?)
+;; make-base-dirpath : hash? (listof string?) bool? -> string?
+(define (make-base-dirpath tags files shared?)
   (let* ([album-artist (sluggify-str (tag-ref tags 'albumartist))]
          [album-title
           (truncate-file-str (sluggify-str (tag-ref tags 'albumtitle)) 60)]
@@ -125,28 +111,26 @@
          [cd-folder (if (multi-disc? tags)
                         (string-append "CD" (pad-to-width (tag-ref tags 'discnumber) 2))
                         #f)])
-    (string-join (filter string?
-                         `("/mnt"
-                           "EXTREME_SSD"
-                           "Music"
-                           ,album-artist
-                           ,album-folder-name
-                           ,(or cd-folder #f)))
-                 "/")))
+    (if shared?
+        (string-join (filter string?
+                             `(,(format "~a - ~a" album-artist album-folder-name) ,cd-folder))
+                     "/")
+        (string-join (filter string?
+                             `("/mnt" "EXTREME_SSD" "Music" ,album-artist ,album-folder-name ,cd-folder))
+                     "/"))))
 
 ;; organize-directory : is-dir? -> void?
-(define/contract (organize-directory path)
-  (->/c is-dir? void?)
+(define (organize-directory path shared?)
   (let* ([entries (read-dir path)]
          [audio-files (filter audio-file? entries)])
     (cond
       ;; case: album or disc
       [(null? audio-files)
-       (for-each (λ (dir) (organize-directory dir))
+       (for-each (λ (dir) (organize-directory dir shared?))
                  (filter is-dir? entries))]
       [else
-        (let* ([tags (extract-audio-tags (car audio-files))]
-               [target-dir (make-base-dirpath tags audio-files)])
+        (let* ([tags (get-audio-tags (car audio-files))]
+               [target-dir (make-base-dirpath tags audio-files shared?)])
           (unless (path-exists? target-dir)
                   (create-directory! target-dir))
           (for-each (λ (entry)
@@ -159,7 +143,7 @@
                          (unless (and (equal? current-dir (canonicalize-path target-dir))
                                       (equal? new-name base-name))
                                  (log-move! entry dest)
-                                 (rename-file! entry dest))))
+                                 (rename! entry dest))))
                     entries))])
     (delete-if-empty! path)))
 
@@ -178,14 +162,36 @@
   (hash-try-get tags (symbol->string key)))
 
 ;; display-tags! : hash? -> void?
-(define/contract (display-tags! tags)
-  (->/c tag-hash/c void?)
+(define (display-tags! tags)
   (for-each (λ (kv)
        (displayln `(,(car kv) ,(cdr kv))))
     (hash->list tags)))
 
-(let ([args (car (list-tail (command-line) 3))])
-  (when (null? args)
-    (error! "Usage: rename_music.scm [-s|--share] <directory>"))
-  (organize-directory args)
-  (displayln "Organization complete."))
+;;; CLI
+
+(define (cli/handler ctx)
+  (displayln ctx)
+  (let ([shared? (hash-try-get ctx "--shared")]
+        [interactive? (hash-try-get ctx "--interactive")]
+        [dirs (hash-try-get ctx 'args)])
+    (unless dirs
+      (error! "Provide at least 1 argument."))
+    (for-each (lambda (dir)
+                (displayln (format "Organizing: ~a" dir))
+                (organize-directory dir shared?))
+              dirs)))
+
+(make-command rename_music.scm
+  (doc "Reorganize music files")
+  (options
+    (shared "-s" "--shared" "Use shared naming scheme" (flag #t))
+    (interactive "-i" "--interactive" "Enable interactive mode" (flag #t)))
+  (subcommands)
+  (positionals)
+  (handler cli/handler))
+
+(define (main)
+  (let ([args (drop (command-line) 3)])
+    (parse-args rename_music.scm args)))
+
+(main)

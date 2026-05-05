@@ -1,9 +1,10 @@
 #!/usr/bin/env -S steel --
 
-(#%require-dylib "libsteel_audio_tags" (only-in extract-audio-tags
-                                                regex-patch-audio-tag))
+(#%require-dylib "libsteel_taglib" (only-in get-audio-tags
+                                            regex-patch-audio-tag))
 
 (require "srfi/srfi-28/format.scm")
+(require "cliron/main.scm")
 
 (define g-supported-audio-file-types '("flac" "mp3"))
 
@@ -51,21 +52,32 @@
             [audio-files (filter is-audio? entries)])
        (when (not (null? audio-files))
              (for-each (λ (entry)
-                       (sanitize-file entry))
+                         (sanitize-file entry))
                     audio-files))
        (for-each (λ (dir)
-                    (when (is-dir? dir)
-                          (traverse-files dir)))
+                   (when (is-dir? dir)
+                     (traverse-files dir)))
                  entries))]
     [else
       (sanitize-file path)]))
 
-(let ([args (list-tail (command-line) 3)])
-  (when (null? args)
-    (error! "Usage: sanitize_music.scm <file-or-directory...>"))
-  (for-each (λ (arg)
-               (unless (path-exists? arg)
-                       (error! (format "Path not found: ~a" arg)))
-               (traverse-files arg))
-            args)
-  (displayln "Sanitization complete."))
+(define (cli/handler ctx)
+  (let ([args (or (hash-try-get ctx 'args) '())])
+    (for-each (λ (arg)
+                (unless (path-exists? arg)
+                  (error! (format "Path not found: ~a" arg)))
+                (traverse-files arg))
+              args)))
+
+(make-command sanitize_music.scm
+  (doc "Sanitize music files")
+  (options)
+  (subcommands)
+  (positionals)
+  (handler cli/handler))
+
+(define (main)
+  (let ([args (drop (command-line) 3)])
+    (parse-args sanitize_music.scm args)))
+
+(main)

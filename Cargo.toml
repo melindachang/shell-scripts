@@ -1,6 +1,7 @@
 [workspace]
-members = ["steel-audio-tags", "steel-fs-rename"]
+members = ["crates/*"]
 resolver = "3"
 
 [workspace.dependencies]
-steel-core = { version = "0.8.2", features = ["anyhow", "dylibs", "sync"] }
+steel-core = { version = "0.8.2", features = ["dylibs", "sync"] }
+abi_stable = "0.11.3"
