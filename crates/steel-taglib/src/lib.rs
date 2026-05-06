@@ -4,28 +4,31 @@ use abi_stable::std_types::{RBoxError, RResult};
 use anyhow::{anyhow, Context};
 use lofty::{
     config::{ParseOptions, WriteOptions},
-    file::{BoundTaggedFile, TaggedFileExt},
+    file::{AudioFile, BoundTaggedFile, TaggedFileExt},
     read_from_path,
     tag::{ItemValue, Tag, TagItem},
 };
 use regex::Regex;
-use std::{collections::HashMap, fs::OpenOptions};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    io,
+};
 use steel::{
     declare_module,
     steel_vm::ffi::{FFIModule, FFIValue, IntoFFIVal, RegisterFFIFn},
 };
 
-#[derive(Debug)]
-enum TagValue {
-    String(String),
-    VecString(Vec<String>),
+enum Either<L, R> {
+    Left(L),
+    Right(R),
 }
 
-impl IntoFFIVal for TagValue {
+impl<L: IntoFFIVal, R: IntoFFIVal> IntoFFIVal for Either<L, R> {
     fn into_ffi_val(self) -> RResult<FFIValue, RBoxError> {
         match self {
-            TagValue::String(s) => RResult::ROk(s.into()),
-            TagValue::VecString(v) => RResult::ROk(v.into_ffi_val().unwrap()),
+            Self::Left(l) => l.into_ffi_val(),
+            Self::Right(r) => r.into_ffi_val(),
         }
     }
 }
@@ -38,10 +41,7 @@ impl core::fmt::Debug for FFIError {
     }
 }
 
-impl<E> From<E> for FFIError
-where
-    E: Into<anyhow::Error>,
-{
+impl<E: Into<anyhow::Error>> From<E> for FFIError {
     fn from(err: E) -> Self {
         FFIError(err.into())
     }
@@ -55,7 +55,9 @@ impl IntoFFIVal for FFIError {
 }
 
 /// get-audio-tags : string? -> (hashof string? (or/c string? (listof string?)))
-fn get_audio_tags(path_str: &str) -> Result<HashMap<String, TagValue>, FFIError> {
+fn get_audio_tags(
+    path_str: &str,
+) -> Result<HashMap<String, Either<String, Vec<String>>>, FFIError> {
     let tagged_file = read_from_path(path_str)?;
     let tag = tagged_file
         .primary_tag()
@@ -65,8 +67,28 @@ fn get_audio_tags(path_str: &str) -> Result<HashMap<String, TagValue>, FFIError>
     Ok(tag_to_map(tag))
 }
 
-fn tag_to_map(tag: &Tag) -> HashMap<String, TagValue> {
-    let mut tag_map: HashMap<String, TagValue> = HashMap::new();
+/// get-audio-properties : string? -> (hashof string? (or/c number? #f))
+fn get_audio_properties(path_str: &str) -> Result<HashMap<String, Option<usize>>, FFIError> {
+    let audio_file = read_from_path(path_str)?;
+    let props = audio_file.properties();
+
+    let mut prop_map: HashMap<String, Option<usize>> = HashMap::new();
+
+    prop_map.insert(
+        "overall-bitrate".into(),
+        props.overall_bitrate().map(|v| v as usize),
+    );
+    prop_map.insert(
+        "audio-bitrate".into(),
+        props.audio_bitrate().map(|v| v as usize),
+    );
+    prop_map.insert("bit-depth".into(), props.bit_depth().map(|v| v as usize));
+
+    Ok(prop_map)
+}
+
+fn tag_to_map(tag: &Tag) -> HashMap<String, Either<String, Vec<String>>> {
+    let mut tag_map: HashMap<String, Either<String, Vec<String>>> = HashMap::new();
 
     for item in tag.items() {
         let key_str = format!("{:?}", item.key()).to_lowercase();
@@ -75,26 +97,18 @@ fn tag_to_map(tag: &Tag) -> HashMap<String, TagValue> {
         tag_map
             .entry(key_str)
             .and_modify(|existing| match existing {
-                TagValue::VecString(v) => {
-                    v.push(value_str.to_string());
-                }
-                TagValue::String(s) => {
+                Either::Left(s) => {
                     if s != value_str {
                         let old_str = std::mem::take(s);
-                        *existing = TagValue::VecString(vec![old_str, value_str.to_string()]);
+                        *existing = Either::Right(vec![old_str, value_str.to_string()]);
                     }
                 }
+                Either::Right(v) => v.push(value_str.to_string()),
             })
-            .or_insert(TagValue::String(value_str.to_string()));
+            .or_insert(Either::Left(value_str.to_string()));
     }
 
     tag_map
-}
-
-fn rename(src: &str, dest: &str) -> Result<(), FFIError> {
-    std::fs::rename(src, dest)?;
-
-    Ok(())
 }
 
 /// regex-patch-audio-tags : string? (vectorof string?) (vectorof (vectorof string?)) -> void?
@@ -167,14 +181,29 @@ fn regex_patch_audio_tag(
     Ok(())
 }
 
+/// rename-file! : string? string? -> void?
+fn rename_file(source: &str, destination: &str) -> Result<(), FFIError> {
+    if let Err(e) = fs::rename(source, destination) {
+        if e.raw_os_error() == Some(18) || e.kind() == io::ErrorKind::CrossesDevices {
+            fs::copy(source, destination)?;
+            fs::remove_file(source)?;
+        } else {
+            return Err(e.into());
+        }
+    }
+
+    Ok(())
+}
+
 declare_module!(create_module);
 
 fn create_module() -> FFIModule {
     let mut module = FFIModule::new("steel/taglib");
     module
         .register_fn("get-audio-tags", get_audio_tags)
-        .register_fn("rename!", rename)
-        .register_fn("regex-patch-audio-tag", regex_patch_audio_tag);
+        .register_fn("regex-patch-audio-tag", regex_patch_audio_tag)
+        .register_fn("get-audio-properties", get_audio_properties)
+        .register_fn("rename-file!", rename_file);
 
     module
 }
