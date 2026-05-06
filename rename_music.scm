@@ -116,7 +116,7 @@
                              `(,(format "~a - ~a" album-artist album-folder-name) ,cd-folder))
                      "/")
         (string-join (filter string?
-                             `("/mnt" "EXTREME_SSD" "Music" ,album-artist ,album-folder-name ,cd-folder))
+                             `("/mnt" "exfat" "Music" ,album-artist ,album-folder-name ,cd-folder))
                      "/"))))
 
 ;; organize-directory : is-dir? -> void?
