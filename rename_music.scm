@@ -127,7 +127,7 @@
          [cd-folder (and (multi-disc? tags)
                          (format "CD~a" (pad-to-width (meta-ref tags 'discnumber) 2)))])
     (string-join (filter string?
-                         `(@,(if shared? '() (list "/mnt" "exfat" "Music" album-artist))
+                         `(,@(if shared? '() (list "/mnt" "exfat" "Music" album-artist))
                             ,album-folder-name ,cd-folder))
                  "/")))
 
