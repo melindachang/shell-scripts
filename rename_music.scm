@@ -26,7 +26,7 @@
 
 ;; sluggify-str : string? -> string?
 (define (sluggify-str s)
-  (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\| #\< #\>)]
+  (let* ([blacklist '(#\/ #\\ #\* #\: #\? #\| #\< #\> #\")]
          [chars (string->list s)]
          [replaced-chars (map (λ (c) (if (member c blacklist) #\_ c)) chars)])
     (list->string replaced-chars)))
@@ -177,7 +177,7 @@
 ;; display-tags! : hash? -> void?
 (define (display-tags! tags)
   (for-each (λ (kv)
-       (displayln `(,(car kv) ,(cdr kv))))
+       (displayln (list (car kv) (cdr kv))))
     (hash->list tags)))
 
 ;;; CLI
