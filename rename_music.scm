@@ -28,6 +28,12 @@
                g-supported-meta-file-types)
        (is-file? path)))
 
+(define (prune-file? path)
+  (and (string? (path->extension path))
+       (member (string-downcase (path->extension path))
+               g-file-types-to-prune)
+       (is-file? path)))
+
 ;;; UTILS
 
 ;; sluggify-str : string? -> string?
@@ -162,13 +168,13 @@
                  (filter is-dir? dirents))]
       [else
         (for-each (λ (f)
-                     (when (and (is-file? f)
-                                (member (path->extension f) g-file-types-to-prune))
+                     (when (prune-file? f)
                        (displayln "Pruning file:" f)
                        (delete-file! f)))
                   dirents)
 
-        (let* ([tags (get-audio-tags (car audio-files))]
+        (let* ([dirents (filter (λ (f) (not (prune-file? f))) dirents)]
+               [tags (get-audio-tags (car audio-files))]
                [props (get-audio-properties (car audio-files))]
                [target-dir (make-base-dirpath tags props audio-files shared?)])
 
