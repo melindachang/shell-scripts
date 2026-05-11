@@ -15,24 +15,25 @@
 ;; audio-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported audio file, false otherwise.
 (define (audio-file? path)
-  (and (string? (path->extension path))
+  (and (is-file? path)
+       (string? (path->extension path))
        (member (string-downcase (path->extension path))
-               g-supported-audio-file-types)
-       (is-file? path)))
+               g-supported-audio-file-types)))
  
 ;; meta-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported metadata file, false otherwise.
 (define (meta-file? path)
-  (and (string? (path->extension path))
+  (and (is-file? path)
+       (string? (path->extension path))
        (member (string-downcase (path->extension path))
-               g-supported-meta-file-types)
-       (is-file? path)))
+               g-supported-meta-file-types)))
 
+;; prune-file? : string? -> bool?
 (define (prune-file? path)
-  (and (string? (path->extension path))
+  (and (is-file? path)
+       (string? (path->extension path))
        (member (string-downcase (path->extension path))
-               g-file-types-to-prune)
-       (is-file? path)))
+               g-file-types-to-prune)))
 
 ;;; UTILS
 
@@ -167,36 +168,35 @@
        (for-each (λ (dir) (organize-directory dir shared? playlist?))
                  (filter is-dir? dirents))]
       [else
-        (for-each (λ (f)
-                     (when (prune-file? f)
+        (let* ([to-prune (filter prune-file? dirents)]
+               [kept-dirents (filter (λ (f) (not (prune-file? f))) dirents)])
+          (for-each (λ (f)
                        (displayln "Pruning file:" f)
-                       (delete-file! f)))
-                  dirents)
+                       (delete-file! f))
+                    to-prune)
+          (let* ([tags (get-audio-tags (car audio-files))]
+                 [props (get-audio-properties (car audio-files))]
+                 [target-dir (make-base-dirpath tags props audio-files shared?)])
 
-        (let* ([pruned-dirents (filter (λ (f) (not (prune-file? f))) dirents)]
-               [tags (get-audio-tags (car audio-files))]
-               [props (get-audio-properties (car audio-files))]
-               [target-dir (make-base-dirpath tags props audio-files shared?)])
+            (unless (path-exists? target-dir)
+                    (create-directory! target-dir))
 
-          (unless (path-exists? target-dir)
-                  (create-directory! target-dir))
-
-          (for-each (λ (dirent)
-                       (let* ([base-name (file-name dirent)]
-                              [new-name (cond [(audio-file? dirent) (get-new-filename dirent)]
-                                              [(meta-file? dirent) (get-new-meta-filename dirent tags)]
-                                              [else base-name])]
-                              [dst (string-append target-dir "/" new-name)]
-                              [current-dir (canonicalize-path (parent-name dirent))])
-                       (unless (and (equal? current-dir (canonicalize-path target-dir))
-                                    (equal? new-name base-name))
-                         (log-move! dirent dst)
-                         (rename-file! dirent dst))))
-                    pruned-dirents)
-          (when playlist?
-            (let* ([new-dirents (read-dir target-dir)]
-                   [new-audio-files (filter audio-file? new-dirents)])
-              (write-playlist! target-dir tags new-audio-files))))])
+            (for-each (λ (dirent)
+                         (let* ([base-name (file-name dirent)]
+                                [new-name (cond [(audio-file? dirent) (get-new-filename dirent)]
+                                                [(meta-file? dirent) (get-new-meta-filename dirent tags)]
+                                                [else base-name])]
+                                [dst (string-append target-dir "/" new-name)]
+                                [current-dir (canonicalize-path (parent-name dirent))])
+                         (unless (and (equal? current-dir (canonicalize-path target-dir))
+                                      (equal? new-name base-name))
+                           (log-move! dirent dst)
+                           (rename-file! dirent dst))))
+                      kept-dirents)
+            (when playlist?
+              (let* ([new-dirents (read-dir target-dir)]
+                     [new-audio-files (filter audio-file? new-dirents)])
+                (write-playlist! target-dir tags new-audio-files)))))])
     (delete-if-empty! path)))
 
 ;; log-move! : string? string? -> void?
