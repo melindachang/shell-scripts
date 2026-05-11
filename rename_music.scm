@@ -173,7 +173,7 @@
                        (delete-file! f)))
                   dirents)
 
-        (let* ([dirents (filter (λ (f) (not (prune-file? f))) dirents)]
+        (let* ([pruned-dirents (filter (λ (f) (not (prune-file? f))) dirents)]
                [tags (get-audio-tags (car audio-files))]
                [props (get-audio-properties (car audio-files))]
                [target-dir (make-base-dirpath tags props audio-files shared?)])
@@ -192,7 +192,7 @@
                                     (equal? new-name base-name))
                          (log-move! dirent dst)
                          (rename-file! dirent dst))))
-                    dirents)
+                    pruned-dirents)
           (when playlist?
             (let* ([new-dirents (read-dir target-dir)]
                    [new-audio-files (filter audio-file? new-dirents)])
