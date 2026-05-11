@@ -185,6 +185,34 @@ fn regex_patch_audio_tag(
     Ok(())
 }
 
+fn remove_all_images(path_str: &str) -> Result<(), FFIError> {
+    let file = OpenOptions::new().read(true).write(true).open(path_str)?;
+
+    let mut tagged_file = BoundTaggedFile::read_from(file, ParseOptions::new())?;
+
+    let tag = if tagged_file.primary_tag().is_some() {
+        tagged_file.primary_tag_mut().unwrap()
+    } else {
+        tagged_file
+            .first_tag_mut()
+            .ok_or_else(|| anyhow!("No tags found in file"))?
+    };
+
+    let n_images = tag.picture_count();
+
+    if n_images > 0 {
+        for i in 0..n_images {
+            tag.remove_picture(i as usize);
+        }
+
+        println!("Removed {n_images} image(s) from {path_str}");
+
+        tagged_file.save(WriteOptions::default())?;
+    }
+
+    Ok(())
+}
+
 /// rename-file! : string? string? -> void?
 fn rename_file(source: &str, destination: &str) -> Result<(), FFIError> {
     if let Err(e) = fs::rename(source, destination) {
@@ -207,6 +235,7 @@ fn create_module() -> FFIModule {
         .register_fn("get-audio-tags", get_audio_tags)
         .register_fn("regex-patch-audio-tag", regex_patch_audio_tag)
         .register_fn("get-audio-properties", get_audio_properties)
+        .register_fn("remove-all-images!", remove_all_images)
         .register_fn("rename-file!", rename_file);
 
     module

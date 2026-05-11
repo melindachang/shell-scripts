@@ -1,7 +1,8 @@
 #!/usr/bin/env -S steel --
 
 (#%require-dylib "libsteel_taglib" (only-in get-audio-tags
-                                            regex-patch-audio-tag))
+                                            regex-patch-audio-tag
+                                            remove-all-images!))
 
 (require "srfi/srfi-28/format.scm")
 (require "cliron/main.scm")
@@ -36,7 +37,8 @@
 (define (sanitize-file path)
   (regex-patch-audio-tag path
                          (map symbol->string g-keys-to-sanitize)
-                         g-regex-rules))
+                         g-regex-rules)
+  (remove-all-images! path))
 
 ;; is-audio? : string? -> bool?
 (define (is-audio? path)
@@ -69,15 +71,13 @@
                 (traverse-files arg))
               args)))
 
-(make-command sanitize_music.scm
-  (doc "Sanitize music files")
-  (options)
-  (subcommands)
-  (positionals)
-  (handler cli/handler))
+(define cli/command
+  (make-command 'sanitize_music
+                #:doc "Sanitize music files"
+                #:handler cli/handler))
 
 (define (main)
   (let ([args (drop (command-line) 3)])
-    (parse-args sanitize_music.scm args)))
+    (parse-args cli/command args)))
 
 (main)
