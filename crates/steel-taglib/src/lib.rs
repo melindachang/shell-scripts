@@ -75,6 +75,10 @@ fn get_audio_properties(path_str: &str) -> Result<HashMap<String, Option<usize>>
     let mut prop_map: HashMap<String, Option<usize>> = HashMap::new();
 
     prop_map.insert(
+        "duration".into(),
+        Some(props.duration().as_millis() as usize),
+    );
+    prop_map.insert(
         "overall-bitrate".into(),
         props.overall_bitrate().map(|v| v as usize),
     );

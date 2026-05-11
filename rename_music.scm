@@ -5,21 +5,27 @@
                                             rename-file!))
 
 (require "srfi/srfi-28/format.scm")
+(require "steel/sorting/merge-sort.scm")
 (require "cliron/main.scm")
 
 (define g-supported-audio-file-types '("flac" "mp3"))
 (define g-supported-meta-file-types '("cue" "log"))
+(define g-file-types-to-prune '("m3u" "m3u8"))
 
 ;; audio-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported audio file, false otherwise.
 (define (audio-file? path)
-  (and (member (path->extension path) g-supported-audio-file-types)
+  (and (string? (path->extension path))
+       (member (string-downcase (path->extension path))
+               g-supported-audio-file-types)
        (is-file? path)))
  
 ;; meta-file? : string? -> bool?
 ;; Returns true if path exists and points to a supported metadata file, false otherwise.
 (define (meta-file? path)
-  (and (member (path->extension path) g-supported-meta-file-types)
+  (and (string? (path->extension path))
+       (member (string-downcase (path->extension path))
+               g-supported-meta-file-types)
        (is-file? path)))
 
 ;;; UTILS
@@ -42,7 +48,7 @@
 (define (delete-if-empty! path)
   (let ([remaining (read-dir path)])
     (when (null? remaining)
-      (displayln (format "Cleaning up empty directory: ~a" path))
+      (displayln "Cleaning up empty directory:" path)
       (delete-directory! path))))
 
 ;; truncate-file-str : string? number? -> string?
@@ -54,7 +60,7 @@
 ;; get-new-filename : audio-file? -> string?
 ;; Make new file name for the specified audio file.
 (define (get-new-filename path)
-  (let* ([ext (path->extension path)]
+  (let* ([ext (string-downcase (path->extension path))]
          [tags (get-audio-tags path)]
          [disc-number (pad-to-width (or (meta-try-get tags 'discnumber) 1) 2)]
          [track-number (pad-to-width (meta-ref tags 'tracknumber) 2)]
@@ -72,14 +78,28 @@
                         (meta-ref tags 'albumtitle))])
     (format "~a.~a"
             (truncate-file-str (sluggify-str meta-name) 60)
-            (path->extension path))))
+            (string-downcase (path->extension path)))))
 
-;; get-album-identity : (listof is-file?) -> hash?
-(define (get-album-identity files)
-  (let ([audio-files (filter audio-file? files)])
-    (if (null? audio-files)
-        (error! "No audio files found in directory.")
-        (get-audio-tags (car audio-files)))))
+;; write-playlist! : is-dir? hash? string?
+(define (write-playlist! target-dir tags audio-files)
+  (let* ([playlist-name (get-new-meta-filename "playlist.m3u" tags)]
+         [playlist-path (string-append (canonicalize-path target-dir) "/" playlist-name)]
+         [out (open-output-file playlist-path)])
+
+    (displayln "Creating playlist:" playlist-path)
+    (write-bytes (string->bytes "#EXTM3U") out)
+
+    (for-each (λ (file)
+                 (let* ([tags (get-audio-tags file)]
+                        [props (get-audio-properties file)]
+                        [duration (let ([raw (meta-try-get props 'duration)])
+                                    (if raw (round (/ raw 1000)) ""))]
+                        [artist (or (meta-try-get tags 'trackartist) "")]
+                        [title (or (meta-try-get tags 'tracktitle) "")])
+                   (write-bytes (string->bytes (format "\n#EXTINF: ~a, ~a - ~a" duration artist title)) out)
+                   (write-bytes (string->bytes (string-append "\n" (file-name file))) out)))
+              (merge-sort audio-files #:comparator string<?))
+    (close-output-port out)))
 
 ;; multi-disc? : hash? -> bool?
 (define (multi-disc? tags)
@@ -123,7 +143,7 @@
                                         ,(and shared? bit-stat)
                                         ,(format "~a]" media-type)
                                         ,(and catalog-num (format "{~a}" catalog-num))))
-                              " ")]
+                            " ")]
          [cd-folder (and (multi-disc? tags)
                          (format "CD~a" (pad-to-width (meta-ref tags 'discnumber) 2)))])
     (string-join (filter string?
@@ -131,21 +151,30 @@
                             ,album-folder-name ,cd-folder))
                  "/")))
 
-;; organize-directory : is-dir? -> void?
-(define (organize-directory path shared?)
+;; organize-directory : is-dir? bool? bool? -> void?
+(define (organize-directory path shared? playlist?)
   (let* ([dirents (read-dir path)]
          [audio-files (filter audio-file? dirents)])
     (cond
       ;; case: album or disc
       [(null? audio-files)
-       (for-each (λ (dir) (organize-directory dir shared?))
+       (for-each (λ (dir) (organize-directory dir shared? playlist?))
                  (filter is-dir? dirents))]
       [else
+        (for-each (λ (f)
+                     (when (and (is-file? f)
+                                (member (path->extension f) g-file-types-to-prune))
+                       (displayln "Pruning file:" f)
+                       (delete-file! f)))
+                  dirents)
+
         (let* ([tags (get-audio-tags (car audio-files))]
                [props (get-audio-properties (car audio-files))]
                [target-dir (make-base-dirpath tags props audio-files shared?)])
+
           (unless (path-exists? target-dir)
                   (create-directory! target-dir))
+
           (for-each (λ (dirent)
                        (let* ([base-name (file-name dirent)]
                               [new-name (cond [(audio-file? dirent) (get-new-filename dirent)]
@@ -153,11 +182,15 @@
                                               [else base-name])]
                               [dst (string-append target-dir "/" new-name)]
                               [current-dir (canonicalize-path (parent-name dirent))])
-                         (unless (and (equal? current-dir (canonicalize-path target-dir))
-                                      (equal? new-name base-name))
-                                 (log-move! dirent dst)
-                                 (rename-file! dirent dst))))
-                    dirents))])
+                       (unless (and (equal? current-dir (canonicalize-path target-dir))
+                                    (equal? new-name base-name))
+                         (log-move! dirent dst)
+                         (rename-file! dirent dst))))
+                    dirents)
+          (when playlist?
+            (let* ([new-dirents (read-dir target-dir)]
+                   [new-audio-files (filter audio-file? new-dirents)])
+              (write-playlist! target-dir tags new-audio-files))))])
     (delete-if-empty! path)))
 
 ;; log-move! : string? string? -> void?
@@ -184,27 +217,37 @@
 
 (define (cli/handler ctx)
   (displayln ctx)
-  (let ([shared? (hash-try-get ctx "--shared")]
-        [interactive? (hash-try-get ctx "--interactive")]
+  (let ([shared? (hash-try-get ctx 'shared)]
+        [interactive? (hash-try-get ctx 'interactive)]
+        [playlist? (hash-try-get ctx 'playlist)]
         [dirs (hash-try-get ctx 'args)])
     (unless dirs
       (error! "Provide at least 1 argument."))
-    (for-each (lambda (dir)
-                (displayln (format "Organizing: ~a" dir))
-                (organize-directory dir shared?))
+    (for-each (λ (dir)
+                 (displayln "Organizing:" dir)
+                 (organize-directory dir shared? playlist?))
               dirs)))
 
-(make-command rename_music.scm
-  (doc "Reorganize music files")
-  (options
-    (shared "-s" "--shared" "Use shared naming scheme" (flag #t))
-    (interactive "-i" "--interactive" "Enable interactive mode" (flag #t)))
-  (subcommands)
-  (positionals)
-  (handler cli/handler))
+(define cli/command
+  (make-command 'rename_music
+    #:doc "Reorganize music files"
+    #:options (list
+                (make-flag 'shared
+                           #:short #\s
+                           #:long "shared"
+                           #:doc "Use shared naming scheme")
+                (make-flag 'interactive
+                           #:short #\i
+                           #:long "interactive"
+                           #:doc "Enable interactive mode")
+                (make-flag 'playlist
+                           #:short #\p
+                           #:long "playlist"
+                           #:doc "Create .m3u playlist files"))
+      #:handler cli/handler))
 
 (define (main)
   (let ([args (drop (command-line) 3)])
-    (parse-args rename_music.scm args)))
+    (parse-args cli/command args)))
 
 (main)
