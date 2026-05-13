@@ -1,13 +1,14 @@
 * shell-scripts
 
-a collection of shell scripts (largely) written in common lisp. arguably
-pointless.
+a collection of shell scripts written in steel, a scheme built for
+interoperability with rust dylibs.
 
-built for use on my personal system; no guarantees on other machines.
+built for use on my personal systems; no guarantees on other machines.
 
 * Index
 
 ** Media management
 
-- *rename_music.cl:* Moves specified music file(s) to appropriate
+- *rename_music.scm:* Moves specified music file(s) to appropriate
   directories based on tag information.
+- *sanitize_music.scm:* Normalizes tags with regex.
